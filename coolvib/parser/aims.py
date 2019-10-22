@@ -207,7 +207,7 @@ def aims_read_fermi_and_kpoints(filename,cell=None):
                 print 'Found k_point_list keyword, extracting kpoint_weights'
                 kweights_exist = True
 
-            if '| Chemical potential (Fermi level):' in line \
+            if '| Chemical potential (Fermi level)' in line \
                     and not fermi_level_exists:
                 print 'Found Fermi Level, extracting fermi level'
                 fermi_level_exists = True
@@ -230,6 +230,7 @@ def aims_read_fermi_and_kpoints(filename,cell=None):
                     kpoint.append(float(line.split()[6]))
                     kpoint.append(float(line.split()[9]))
                     kpoints.append(kpoint)
+                    #print(kpoint)
                     n_k += 1
                 if n_k == nkpts:
                     k_points_are_done = True
@@ -293,7 +294,8 @@ def aims_read_eigenvalues_and_coefficients(fermi_level, directory='./', spin=Fal
         lines = f.readlines()
         n_basis = len(lines) - 8
         n_states = len(lines[4].split()[3:])
-    #print n_basis, n_kpts, n_spin
+    if debug:
+        print n_basis, n_kpts, n_spin, n_states
     
     eigenvalues = np.zeros([n_kpts, n_spin, n_states])
     occ = np.zeros([n_kpts, n_spin, n_states])
@@ -316,7 +318,9 @@ def aims_read_eigenvalues_and_coefficients(fermi_level, directory='./', spin=Fal
                 lines = f.readlines()
                 #line 4 contains the eigenvalues
                 eigenvalues[k,s,:] = np.array(lines[5].split()[3:]).astype(np.float)
+                #print np.array(lines[5].split()[3:])
                 #line 5 contains the occupations
+                #print(np.array(lines[6].split()[3:]))
                 occ[k,s,:] = np.array(lines[6].split()[3:]).astype(np.float)
                 nline = 8
                 for i in range(n_basis):
@@ -364,7 +368,7 @@ def aims_read_HS(directory='./', spin=False, debug=False):
     filename = directory+'/'+name_base_S + '.band_1.kpt_1.out'
     with open(filename, 'r') as f:
         lines = f.readlines()
-        n_basis = len(lines) -3 
+        n_basis = len(lines) -3 #Subtract the header lines of the files
     
     H = np.zeros([n_kpts, n_spin, n_basis, n_basis],dtype=complex)
     S = np.zeros([n_kpts, n_basis, n_basis],dtype=complex)
@@ -378,7 +382,7 @@ def aims_read_HS(directory='./', spin=False, debug=False):
         with open(filename_S,'r') as f:
             if debug:
                 print 'Reading overlap_matrix from {0} '.format(filename_S)
-            s = np.loadtxt(filename_S,skiprows=3).reshape([n_basis,n_basis,2])
+            s = np.loadtxt(filename_S,skiprows=2).reshape([n_basis,n_basis,2])
             S[k, :, :] = s[:,:,0] + 1j*s[:,:,1]
         with open(filename_H,'r') as f:
             if debug:
@@ -394,4 +398,5 @@ def aims_read_HS(directory='./', spin=False, debug=False):
                 H[k, 0, :, :] = h[:,:,0] + 1j*h[:,:,1]
 
     return H*27.211384500, S
+
 
