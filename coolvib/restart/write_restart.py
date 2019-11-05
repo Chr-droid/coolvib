@@ -30,7 +30,7 @@ from scipy.io import FortranFile
 N_k_control=16
 reproduce = 0
 path = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/H2/blank_test/'
-def write_restart_files(path,N_k_control,reproduce):
+def write_restart_files(path,N_k_control,reproduce=0):
     atoms = read(path+'geometry.in')
     cell = atoms.cell
     filename = path+'output.aimsrestart'
@@ -112,7 +112,7 @@ def write_restart_files(path,N_k_control,reproduce):
             else:
                 num = '0'+str(ii)
             n1='test'+num
-            n2='TEST'+num
+            n2='test'+num
             
             f = FortranFile(path+n2, 'w')
             f.close()
@@ -162,6 +162,69 @@ def write_restart_files(path,N_k_control,reproduce):
                                 ee = np.array([ee2,ee3],dtype='float64')
                                 f.write_record(ee)
                     print("Printing header files")
+                    
+def write_restart_files_from_input(path,N_k_control,eigenvalues,psi,occ,orb_pos,kpoint_weights,reproduce=0):
+    #atoms = read(path+'geometry.in')
+    #cell = atoms.cell
+    #filename = path+'output.aimsrestart'
+    #fermi_level, kpoint_weights = aims_read_fermi_and_kpoints(filename, cell)
+    nkpts = len(kpoint_weights)
+    for ii in range(N_k_control):
+        Ha_to_eV = 1./27.2114
+        if ii<10:
+            num = '00'+str(ii)
+        else:
+            num = '0'+str(ii)
+        n2='test'+num
+        
+        f = FortranFile(path+n2, 'w')
+        f.close()
+        
+        if ii in range(nkpts+1)[1:]:
+            k_valid = 1
+        else:
+            k_valid = 0
+        
+        with FortranFile(path+n2,mode='w') as f:
+            n_k_points = np.shape(kpoint_weights)[0]
+            n_basis = np.array([orb_pos.size],dtype='int32')
+            n_states_to_save = np.array([occ.shape[2]],dtype='int32')
+            n_spin = np.array([occ.shape[1]],dtype='int32')
+            #n_k_points_task = np.array([1],dtype='int32') #hardcoded but could be read in from the output
+            f.write_record(n_basis)
+            f.write_record(n_states_to_save)
+            f.write_record(n_spin)
+            ll=0
+            if k_valid:
+                n_k_points_task = np.array([1],dtype='int32')
+                f.write_record(n_k_points_task)#######
+                for i_k in range(n_k_points_task):
+                    for i_spin in range(n_spin):
+                        for i_states in range(n_states_to_save):
+                            for i_basis in range(n_basis):
+                                ee1 = psi[i_k,i_spin,i_states,i_basis]
+                                ee = np.array([ee1.real,ee1.imag],dtype='float64')
+                                ll+=1
+                                f.write_record(ee)
+                                
+                for i_k in range(n_k_points):
+                    for i_spin in range(n_spin):
+                        for i_states in range(n_states_to_save):
+                            ee2 = eigenvalues[i_k,i_spin,i_states]*Ha_to_eV
+                            ee3 = occ[i_k,i_spin,i_states]
+                            ee = np.array([ee2,ee3],dtype='float64')
+                            f.write_record(ee)
+            else:
+                n_k_points_task = np.array([0],dtype='int32')
+                f.write_record(n_k_points_task)#######
+                for i_k in range(n_k_points):
+                    for i_spin in range(n_spin):
+                        for i_states in range(n_states_to_save):
+                            ee2 = eigenvalues[i_k,i_spin,i_states]*Ha_to_eV
+                            ee3 = occ[i_k,i_spin,i_states]
+                            ee = np.array([ee2,ee3],dtype='float64')
+                            f.write_record(ee)
+                print("Printing header files")
                     
 #write_restart_files(path,N_k_control,reproduce)
         
