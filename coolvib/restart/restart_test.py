@@ -26,29 +26,29 @@ from scipy.io import FortranFile
 import scipy.linalg as lalg
 from write_restart import *
 
-debug = True
+debug = False
 
 if debug==False:
-    atoms = read('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/AB/geometry.in')
+    atoms = read('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/AB/geometry.in')
     cell = atoms.cell
     
-    filename = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/AB/output.aimsrestart'
+    filename = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/AB/output.aimsrestart'
     
     fermi_level, kpoint_weights = aims_read_fermi_and_kpoints(filename, cell)
     
     nkpts = len(kpoint_weights)
     
-    eigenvaluesAB, psiAB, occ_AB, orb_posAB = aims_read_eigenvalues_and_coefficients(fermi_level, '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/AB', spin=False, debug=False)
-    eigenvaluesA, psiA, occA, orb_posA = aims_read_eigenvalues_and_coefficients(fermi_level, '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/fragA', spin=False, debug=False)
-    eigenvaluesB, psiB, occB, orb_posB = aims_read_eigenvalues_and_coefficients(fermi_level, '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/fragB', spin=False, debug=False)
+    eigenvaluesAB, psiAB, occ_AB, orb_posAB = aims_read_eigenvalues_and_coefficients(fermi_level, '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/AB', spin=False, debug=False)
+    eigenvaluesA, psiA, occA, orb_posA = aims_read_eigenvalues_and_coefficients(fermi_level, '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/fragA', spin=False, debug=False)
+    eigenvaluesB, psiB, occB, orb_posB = aims_read_eigenvalues_and_coefficients(fermi_level, '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/fragB', spin=False, debug=False)
     #----------- eigenvalues = np.zeros([n_kpts, n_spin, n_states])
     #----------- occ = np.zeros([n_kpts, n_spin, n_states])
     #----------- psi = np.zeros([n_kpts, n_spin, n_states, n_basis],dtype=complex)
     #----------- orbital_pos = np.zeros(n_basis,dtype=np.int)
     
-    HAB, SAB = aims_read_HS('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/AB',spin=False)
-    HA, SA = aims_read_HS('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/fragA',spin=False)
-    HB, SB = aims_read_HS('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/fragB',spin=False)
+    HAB, SAB = aims_read_HS('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/AB',spin=False)
+    HA, SA = aims_read_HS('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/fragA',spin=False)
+    HB, SB = aims_read_HS('/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/fragB',spin=False)
     
     nspin = 1 #number-1
     n_k = 16    #number-1
@@ -63,7 +63,7 @@ if debug==False:
     eigAB= np.zeros(shape=(n_k,nspin,psiA.shape[2]+psiB.shape[2]))
 elif debug==True:
     print("!!! Debugging mode has been enabled !!!")
-    print("Test system will be set up:")
+    print("Test system will be set up!")
     n_k=1
     nspin=1
     psiA=np.array([[[[1.,2.],[3.,4.]]]])
@@ -129,6 +129,7 @@ else:
 n_virt_A=occA.shape[2]-n_occ_A
 n_virt_B=occB.shape[2]-n_occ_B
 
+occ_AB_FO = 0*occAB
 CAB_o = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
 CAB_v = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
 CAB_ov = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B+n_virt_A+n_virt_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
@@ -137,9 +138,10 @@ for nk in range(n_k):
         n_o=0
         n_v=0
         for nst in range(CAB.shape[2]):
-            if occAB[nk,ns,nst]!=0:
+            if occAB[nk,ns,nst]>1e-3:
                 CAB_o[nk,ns,n_o,:]=CAB[nk,ns,nst,:]
                 CAB_ov[nk,ns,n_o,:]=CAB[nk,ns,nst,:]
+                occ_AB_FO[nk,ns,n_o] = occAB[nk,ns,nst]
                 n_o+=1
             else:
                 CAB_v[nk,ns,n_v,:]=CAB[nk,ns,nst,:]
@@ -215,6 +217,8 @@ for nk in range(n_k):
         I=np.eye(MM.shape[0])
         if np.all(np.abs(MM.real-I)<1e-10):
             print("STEP 1:   Loewdin Orthogonalization worked")
+        else:
+            print("STEP 1:   ERROR: Loewdin Orthogonalization did not work")
 #------- END Check if the orhtogonalization from above worked------------------
 
 #------- Construct the new overlap matrix SAB_oo_FO1 --------------------------
@@ -255,13 +259,111 @@ for nk in range(n_k):
         P = np.matmul(CAB_v[nk,ns,:,:],SAB[nk,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vo_FO1[nk,ns,:,:] = SAB_FO
-       
+
+#-------Orthogonalize virt fragment orbitals with respect to occ ones----------
+#       C_v_FO2 = CAB_v - C_corr
+print("STEP 2:   Gram-Schmidt Orthogonalization of unoccupied states to occupied states")
+C_GS = np.zeros(shape=(n_k,nspin,SAB_vo_FO1[nk,ns,:,:].shape[0],SAB_vo_FO1[nk,ns,:,:].shape[1]),dtype='complex128')
+C_corr = np.zeros(shape=(n_k,nspin,SAB_vo_FO1[nk,ns,:,:].shape[0],CAB_oo_FO1[nk,ns,:,:].shape[1]),dtype='complex128')
+C_v_FO2 = np.zeros(shape=(n_k,nspin,CAB_v[nk,ns,:,:].shape[0],CAB_v[nk,ns,:,:].shape[1]),dtype='complex128')
+
+for nk in range(n_k):
+    for ns in range(nspin):
+        C_GS[nk,ns,:,:] = SAB_vo_FO1[nk,ns,:,:]#-1.*np.matmul(C_nn,SAB_ov_FO1[nk,ns,:,:])
+        C_corr[nk,ns,:,:] = np.matmul(C_GS[nk,ns,:,:],CAB_oo_FO1[nk,ns,:,:])
+        C_v_FO2[nk,ns,:,:] = CAB_v[nk,ns,:,:] - C_corr[nk,ns,:,:]
+#-------Check if the orhtogonalization from above worked-----------------------
+SAB_ov_FO2 = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,n_virt_A+n_virt_B),dtype='complex128')
+SAB_vo_FO2 = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,n_occ_A+n_occ_B),dtype='complex128')
+SAB_vv_FO2 = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,n_virt_A+n_virt_B),dtype='complex128')
+for nk in range(n_k):
+    for ns in range(nspin):
+        ####### SAB_ov #######
+        CAB_T = np.matrix.conjugate(np.transpose(C_v_FO2[nk,ns,:,:]))
+        P = np.matmul(CAB_oo_FO1[nk,ns,:,:],SAB[nk,:,:])
+        SAB_FO = np.matmul(P,CAB_T)
+        SAB_ov_FO2[nk,ns,:,:] = SAB_FO
+        ####### SAB_vo #######
+        CAB_T = np.matrix.conjugate(np.transpose(CAB_oo_FO1[nk,ns,:,:]))
+        P = np.matmul(C_v_FO2[nk,ns,:,:],SAB[nk,:,:])
+        SAB_FO = np.matmul(P,CAB_T)
+        SAB_vo_FO2[nk,ns,:,:] = SAB_FO
+        ####### SAB_vv #######
+        CAB_T = np.matrix.conjugate(np.transpose(C_v_FO2[nk,ns,:,:]))
+        P = np.matmul(C_v_FO2[nk,ns,:,:],SAB[nk,:,:])
+        SAB_FO = np.matmul(P,CAB_T)
+        SAB_vv_FO2[nk,ns,:,:] = SAB_FO
+        if np.all(np.abs(SAB_vo_FO2[nk,ns,:,:].real)<1e-10) and np.all(np.abs(SAB_ov_FO2[nk,ns,:,:].real)<1e-10):
+            print("STEP 2:   Gram-schmidt Orthogonalization worked") 
+        else:
+            print("STEP 2:   ERROR: Gram-Schmidt Orthogonalization did not work")
+#------- End of Orthogonalize virt fragment orbitals with respect to occ ones--
+            
+#-------Orthogonalize virt fragment orbitals relative to each other-------------
+#       CAB_virt_FO1 = (SAB_vv)^(-1/2) * CAB_v
+CAB_vv_FO3 = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+SAB_vv_FO3 = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,n_virt_A+n_virt_B),dtype='complex128')
+SAB_vv_FO3T = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,n_virt_A+n_virt_B),dtype='complex128')
+
+for nk in range(n_k):
+    for ns in range(nspin):
+#        SAB_oo_ii = lalg.sqrtm(SAB_oo[nk,ns,:,:])
+        # Getting the ^(-1/2) of the overlap matrix
+        lam_s, l_s = np.linalg.eigh(SAB_vv_FO2[nk,ns,:,:])
+        lam_s = lam_s * np.eye(len(lam_s))
+        lam_sqrt_inv = np.sqrt(np.linalg.inv(lam_s))
+        symm_orthog = np.dot(l_s, np.dot(lam_sqrt_inv, l_s.T))
+        SAB_oo_ii = symm_orthog
+        SAB_vv_FO3T[nk,ns,:,:] = SAB_oo_ii
+        ####################
+        C_o_nn = np.matmul(SAB_oo_ii,C_v_FO2[nk,ns,:,:])
+        CAB_vv_FO3[nk,ns,:,:] = C_o_nn
+print("STEP 3:   Loewdin Orthogonalization of occupied states")
+#-------End of orthogonalization of occ fragment orbitals----------------------
+
+#-------Check if the orhtogonalization from above worked-----------------------
+for nk in range(n_k):
+    for ns in range(nspin):
+        CAB_T = np.matrix.conjugate(np.transpose(SAB_vv_FO3T[nk,ns,:,:]))
+        CC = np.matmul(CAB_T,SAB_vv_FO2[nk,ns,:,:])
+        MM = np.matmul(CC,SAB_vv_FO3T[nk,ns,:,:])
+        I=np.eye(MM.shape[0])
+        ####### SAB_vv #######
+        CAB_T = np.matrix.conjugate(np.transpose(CAB_vv_FO3[nk,ns,:,:]))
+        P = np.matmul(CAB_vv_FO3[nk,ns,:,:],SAB[nk,:,:])
+        SAB_FO = np.matmul(P,CAB_T)
+        SAB_vv_FO3[nk,ns,:,:] = SAB_FO
+        if np.all(np.abs(MM.real-I)<1e-10) and np.all(np.abs(SAB_FO.real-I)<1e-9):
+            print("STEP 3:   Loewdin Orthogonalization worked")
+        else:
+            print("STEP 3:   ERROR: Loewdin Orthogonalization did not work")
+#------- END Check if the orhtogonalization from above worked------------------
+            
+#--------- Build final overlap and coefficient matrix--------------------------
+            
+SAB_final = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B+n_virt_A+n_virt_B,n_occ_A+n_occ_B+n_virt_A+n_virt_B),dtype='complex128')
+CAB_final = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B+n_virt_A+n_virt_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+for nk in range(n_k):
+    for ns in range(nspin):
+        SAB_final[nk,ns,0:n_occ_A+n_occ_B,0:n_occ_A+n_occ_B] = SAB_oo_FO1[nk,ns,:,:]
+        SAB_final[nk,ns,0:n_occ_A+n_occ_B,n_occ_A+n_occ_B:] = SAB_ov_FO2[nk,ns,:,:]
+        SAB_final[nk,ns,n_occ_A+n_occ_B:,0:n_occ_A+n_occ_B] = SAB_vo_FO2[nk,ns,:,:]
+        SAB_final[nk,ns,n_occ_A+n_occ_B:,n_occ_A+n_occ_B:] = SAB_vv_FO3[nk,ns,:,:]
+        CAB_final[nk,ns,0:n_occ_A+n_occ_B,0:] = CAB_oo_FO1[nk,ns,:,:]
+        CAB_final[nk,ns,n_occ_A+n_occ_B:,0:] = CAB_vv_FO3[nk,ns,:,:]
+            
 #-----------------End of the Construction of the coefficient matrix------------------
                 
 N_k_control=n_k
 reproduce = 0
-path = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_minimal/AB_restart/'
-#write_restart_files_from_input(path,N_k_control,eigAB,CAB,occAB,orb_posAB,kpoint_weights,reproduce)              
+path = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/AB_restart/'
+write_restart_files_from_input(path,N_k_control,eigAB,CAB_final,occ_AB_FO,orb_posAB,kpoint_weights,reproduce)
+
+path = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/AB_wo_transform/'
+write_restart_files_from_input(path,N_k_control,eigAB,CAB_ov,occ_AB_FO,orb_posAB,kpoint_weights,reproduce)
+
+path = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/He2_tier2/AB_test/'
+write_restart_files_from_input(path,N_k_control,eigAB,psiAB,occ_AB,orb_posAB,kpoint_weights,reproduce)              
     
 #--------------------------------------------------------------------------------------------------------
 
