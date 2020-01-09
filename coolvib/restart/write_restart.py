@@ -27,7 +27,7 @@ from scipy.io import FortranFile
     
 
 
-N_k_control=16
+#N_k_control=16
 reproduce = 0
 path = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/H2/blank_test/'
 def write_restart_files(path,N_k_control,reproduce=0):
@@ -198,11 +198,11 @@ def write_restart_files_from_input(path,N_k_control,eigenvalues,psi,occ,orb_pos,
             if k_valid:
                 n_k_points_task = np.array([1],dtype='int32')
                 f.write_record(n_k_points_task)#######
-                for i_k in range(n_k_points_task):
+                for i_k in range(n_k_points_task):#n_k_points_task
                     for i_spin in range(n_spin):
                         for i_states in range(n_states_to_save):
                             for i_basis in range(n_basis):
-                                ee1 = psi[i_k,i_spin,i_states,i_basis]
+                                ee1 = psi[ii-1,i_spin,i_states,i_basis]#write the eigenvectors for the respective k-point to the file ii-1
                                 ee = np.array([ee1.real,ee1.imag],dtype='float64')
                                 ll+=1
                                 f.write_record(ee)
