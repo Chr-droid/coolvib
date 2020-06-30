@@ -25,16 +25,21 @@ from ase.io import *
 from scipy.io import FortranFile
 import scipy.linalg as lalg
 from write_restart import *
+import os
 
 debug = False
 
 if debug==False:
-    PP = '/home/christian/vsc/energy_decomposition/restart_routines/test_systems/Quinacridone/no_shift/more_k/'
+    #PP = '/home/christian/Dokumente/Home_office/energy_decomposition/Quinacridone/shift_008/basis/multipole/' 
+    PP= '/home/christian/Dokumente/Home_office/COFs/COF-1/energy_decomposition/shift_63/'
     sp = False
+    N_k_control=48
+    reproduce = 0
     atoms = read(PP+'AB/geometry.in')
     cell = atoms.cell
+    Ha_to_eV = 1/27.2114
     
-    filename = PP+'AB/output.aimsrestart'
+    filename = PP+'AB/output.aims'
     
     fermi_level, kpoint_weights = aims_read_fermi_and_kpoints(filename, cell)
     
@@ -47,13 +52,24 @@ if debug==False:
     #----------- occ = np.zeros([n_kpts, n_spin, n_states])
     #----------- psi = np.zeros([n_kpts, n_spin, n_states, n_basis],dtype=complex)
     #----------- orbital_pos = np.zeros(n_basis,dtype=np.int)
+
+    params=np.zeros(shape=(N_k_control,5,psiAB.shape[1]),dtype='int32')
+    params[:,0,0]=psiAB.shape[0]
+    params[:,1,0]=psiAB.shape[3]
+    params[:,2,0]=psiAB.shape[2]
+    params[:,3,0]=psiAB.shape[1]
+    params[:,4,0]=psiAB.shape[0]
+    #
+    #
+    #REPRODUCE_RESTART_FILES(PP+'AB_test/',psiAB,eigenvaluesAB*Ha_to_eV,occ_AB,N_k_control,params,reproduce=1)
+    
     
     HAB, SAB = aims_read_HS(PP+'AB',spin=sp)
     HA, SA = aims_read_HS(PP+'fragA',spin=sp)
     HB, SB = aims_read_HS(PP+'fragB',spin=sp)
     
-    nspin = 1 #number-1
-    n_k = nkpts    #number-1
+    nspin = psiAB.shape[1] #number-1
+    n_k = nkpts   #number-1
     
     #Building the coefficient matrices of the fragments CA, CB and the combined system CAB
     CA = np.zeros(shape=(psiA.shape[2],psiA.shape[3]),dtype='complex128')
@@ -86,6 +102,7 @@ elif debug==True:
     psiAB=eigAB
     occ_AB=occAB
 
+
 #-----------------Construction of the coefficient matrix-----------------------
 #           ( C_occ_A       0     )
 #    CAB =  ( C_virt_A      0     )
@@ -117,11 +134,11 @@ for nk in range(n_k):
                 occAB[nk,ns,nst+psiA.shape[2]]=occB[nk,ns,nst]
                 eigAB[nk,ns,nst+psiA.shape[2]]=eigenvaluesB[nk,ns,nst]
 ##Manipulation to test how switching the states affects the restart functionality
-#for nk in range(n_k):
-#    for ns in range(nspin):
-#        for nst in range(psiAB.shape[2]):
-#            for nb in range(psiAB.shape[3]):
-#                CCAB[nk,ns,nst,nb] = psiAB[nk,ns,nst,nb]
+for nk in range(n_k):
+    for ns in range(nspin):
+        for nst in range(psiAB.shape[2]):
+            for nb in range(psiAB.shape[3]):
+                CCAB[nk,ns,nst,nb] = psiAB[nk,ns,nst,nb]
 #for nk in range(n_k):
 #    for ns in range(nspin):
 #        eigenvaluesAB[nk,ns,0:9] = np.flip(eigenvaluesAB[nk,ns,0:9],0) 
@@ -140,6 +157,7 @@ for nk in range(n_k):
 #n_occ_A=occA.shape[2]
 if nspin>1:
     ###### UNDER CONSTRUCTION########
+    # So far only for symmetrical spin distribution meaning n_up = n_down !!! #
     n_up_A=np.count_nonzero(occA[0][0][:])
     n_up_B=np.count_nonzero(occB[0][0][:])
     n_up_total = n_up_A + n_up_B
@@ -155,6 +173,8 @@ if nspin>1:
     CAB_o_down = np.zeros(shape=(n_k,1,n_down_total,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
     CAB_v_up = np.zeros(shape=(n_k,1,n_virt_up,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
     CAB_v_down = np.zeros(shape=(n_k,1,n_virt_down,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+    CAB_o = np.zeros(shape=(n_k,nspin,n_up_total,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+    CAB_v_ll = np.zeros(shape=(n_k,nspin,n_virt_up,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
     for nk in range(n_k):
         for ns in range(nspin):
             n_o_up=0
@@ -162,68 +182,102 @@ if nspin>1:
             n_v_up=0
             n_v_down=0
             n_occ = 0
+            n_v = 0
+            n_vv=[]
             for nst in range(CAB.shape[2]):
                 if occAB[nk,ns,nst]>1e-2:
                     if ns == 0:
                         CAB_o_up[nk,0,n_o_up,:]=CAB[nk,ns,nst,:]
+                        CAB_o[nk,0,n_o_up,:]=CAB[nk,ns,nst,:]
                         occ_AB_FO[nk,ns,n_occ] = occAB[nk,ns,nst]
                         n_o_up+=1
                         n_occ+=1
                     else:
                         CAB_o_down[nk,0,n_o_down,:]=CAB[nk,ns,nst,:]
+                        CAB_o[nk,1,n_o_down,:]=CAB[nk,ns,nst,:]
                         occ_AB_FO[nk,ns,n_occ] = occAB[nk,ns,nst]
                         n_o_down+=1
                         n_occ+=1
                 elif nst<psiAB.shape[2]:
                     if ns == 0:
                         CAB_v_up[nk,0,n_v_up,:]=CAB[nk,ns,nst,:]
+                        CAB_v_ll[nk,0,n_v_up,:]=CAB[nk,ns,nst,:]
                         n_v_up+=1
+                        n_v+=1
                     else:
                         CAB_v_down[nk,0,n_v_down,:]=CAB[nk,ns,nst,:]
+                        CAB_v_ll[nk,1,n_v_down,:]=CAB[nk,ns,nst,:]
                         n_v_down+=1
+                        n_v+=1
+            n_vv.append(n_v)
+    if all(x == n_vv[0] for x in n_vv):
+        CAB_v = CAB_v_ll[:,:,0:n_v,:]
+    else:
+        print("Not all k-points and spins have the same number of virtual states!")
+    
+    n_occ_A = CAB_o.shape[2]
+    n_occ_B = 0
+    
 else:
     n_occ_A=np.count_nonzero(occA[0][0][:])
     n_occ_B=np.count_nonzero(occB[0][0][:])   
-n_virt_A=occA.shape[2]-n_occ_A#occA.shape[2]-min(np.count_nonzero(occA[0][0][:]),np.count_nonzero(occA[0][1][:]))#occA.shape[2]-n_occ_A
-n_virt_B=occB.shape[2]-n_occ_B#occB.shape[2]-min(np.count_nonzero(occB[0][0][:]),np.count_nonzero(occB[0][1][:]))#occB.shape[2]-n_occ_B
+    n_virt_A=occA.shape[2]-n_occ_A#occA.shape[2]-min(np.count_nonzero(occA[0][0][:]),np.count_nonzero(occA[0][1][:]))#occA.shape[2]-n_occ_A
+    n_virt_B=occB.shape[2]-n_occ_B#occB.shape[2]-min(np.count_nonzero(occB[0][0][:]),np.count_nonzero(occB[0][1][:]))#occB.shape[2]-n_occ_B
 
-occ_AB_FO = 0*occ_AB
-CAB_o = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
-#CAB_v = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
-CAB_v_ll = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
-n_vv=[]
-for nk in range(n_k):
-    for ns in range(nspin):
-        n_o=0
-        n_v=0
-        for nst in range(CAB.shape[2]):
-            if occAB[nk,ns,nst]>1e-8:
-                CAB_o[nk,ns,n_o,:]=CAB[nk,ns,nst,:]
-                #CAB_ov[nk,ns,n_o,:]=CAB[nk,ns,nst,:]
-                occ_AB_FO[nk,ns,n_o] = occAB[nk,ns,nst]
-                n_o+=1
-            elif nst<psiAB.shape[2]:
-                CAB_v_ll[nk,ns,n_v,:]=CAB[nk,ns,nst,:]
-                #CAB_ov[nk,ns,n_occ_A+n_occ_B+n_v,:]=CAB[nk,ns,nst,:]
-                n_v+=1
-        n_vv.append(n_v)
-        
-if all(x == n_vv[0] for x in n_vv):
-    CAB_v = CAB_v_ll[:,:,0:n_v,:]
-else:
-    print("Not all k-points and spins have the same number of virtual states!")
+    occ_AB_FO = 0*occ_AB
+    CAB_o = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+    #CAB_v = np.zeros(shape=(n_k,nspin,n_virt_A+n_virt_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+    CAB_v_ll = np.zeros(shape=(n_k,nspin,psiAB.shape[2]-n_occ_A-n_occ_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+    
+    n_vv=[]
+    for nk in range(n_k):
+#        if nk in range(nkpts+1)[1:]:
+#            k_valid = 1
+#        else:
+#            k_valid = 0
+#            
+#        if k_valid:
+        for ns in range(nspin):
+            n_o=0
+            n_v=0
+            for nst in range(CAB.shape[2]):
+                if occAB[nk,ns,nst]>1e-8:
+                    CAB_o[nk,ns,n_o,:]=CAB[nk,ns,nst,:]
+                    #CAB_ov[nk,ns,n_o,:]=CAB[nk,ns,nst,:]
+                    occ_AB_FO[nk,ns,n_o] = occAB[nk,ns,nst]
+                    n_o+=1
+                elif nst<psiAB.shape[2]:
+                    CAB_v_ll[nk,ns,n_v,:]=CAB[nk,ns,nst,:]
+                    #eigenvaluesAB[nk,ns,n_occ_A+n_occ_B+n_v] = np.abs(eigenvaluesAB[nk,ns,n_occ_A+n_occ_B+n_v])
+                    #CAB_ov[nk,ns,n_occ_A+n_occ_B+n_v,:]=CAB[nk,ns,nst,:]
+                    n_v+=1
+            n_vv.append(n_v)
+CAB_v = CAB_v_ll            
+#    if all(x == n_vv[0] for x in n_vv):
+#        CAB_v = CAB_v_ll[:,:,0:n_v,:]
+#    else:
+#        print("Not all k-points and spins have the same number of virtual states!")
 
-CAB_ov = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B+CAB_v.shape[2],psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+CAB_ov = np.zeros(shape=(n_k,nspin,CAB_o.shape[2]+CAB_v.shape[2],psiA.shape[3]+psiB.shape[3]),dtype='complex128')
 CAB_ov[:,:,0:CAB_o.shape[2],:] = CAB_o
 CAB_ov[:,:,CAB_o.shape[2]:,:] = CAB_v
 CAB_wo_transform = CAB_ov
 
+path = PP+'AB_wo_transform/'
+if not os.path.exists(path):
+    os.makedirs(path)
+REPRODUCE_RESTART_FILES(path,CAB_wo_transform,eigenvaluesAB*Ha_to_eV,occ_AB,N_k_control,params,reproduce=1)
+
+#write_restart_files_from_input(path,N_k_control,eigenvaluesAB,CAB_wo_transform,occ_AB_FO,orb_posAB,kpoint_weights,reproduce)
+#write_restart_files2(path,N_k_control,eigenvaluesAB,CAB_wo_transform,occ_AB,np.zeros(nkpts))
 ##Normalize occupied states################# EXPERIMENTAL !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #n_v=0
 #for nk in range(n_k):
 #    for ns in range(nspin):
 #        for nst in range(CAB_ov.shape[2]):
-#            normal_occ = np.sum(CAB_ov[nk,ns,nst,:]**2)
+#            normal_psi = np.sqrt(np.sum(psiAB[nk,ns,nst,:]**2))
+#            psiAB_norm = psiAB*(1/normal_psi)
+#            normal_occ = np.sqrt(np.sum(CAB_ov[nk,ns,nst,:]**2))
 #            CAB_ov[nk,ns,nst,:] = CAB_ov[nk,ns,nst,:]*(1/normal_occ)
 #            if nst< n_o:
 #                CAB_o[nk,ns,nst,:] = CAB_o[nk,ns,nst,:]*(1/normal_occ)
@@ -231,60 +285,91 @@ CAB_wo_transform = CAB_ov
 #                CAB_v[nk,ns,n_v,:] = CAB_v[nk,ns,n_v,:]*(1/normal_occ) 
 #                n_v+=1
 
+#path = PP+'AB_test/'
+#write_restart_files_from_input(path,N_k_control,eigenvaluesAB,psiAB_norm,occ_AB,orb_posAB,kpoint_weights,reproduce)#CCAB  
+#write_restart_files2(path,N_k_control,eigenvaluesAB,CCAB,occ_AB,np.zeros(nkpts))
+
+S_VOC = np.zeros(shape=(n_k,nspin,CAB_ov.shape[3],CAB_ov.shape[3]),dtype='complex128')
+S_VOC_oo = np.zeros(shape=(n_k,nspin,CAB_o.shape[3],CAB_o.shape[3]),dtype='complex128')
+for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
+#    if k_valid:
+    for ns in range(nspin):
+        #S_VOC_oo[nk,ns,:,:] = np.linalg.inv(np.matmul(CAB_o[nk,ns],np.transpose(CAB_o[nk,ns])))
+        #S_VOC[nk,ns,:,:] = (np.matmul(np.transpose(CAB_ov[nk,ns]),CAB_ov[nk,ns]))
+        #lam_s, l_s = np.linalg.eigh(S_VOC[nk,ns,:,:])
+        #lam_s = lam_s * np.eye(len(lam_s))
+        #lam_sqrt_inv = np.linalg.inv(lam_s)
+        #symm_orthog = np.dot(l_s, np.dot(lam_sqrt_inv, l_s.T))
+        #SAB_oo_ii = symm_orthog # Compared the results to MATLAB - they agree!
+        #S_VOC[nk,ns,:,:] = SAB_oo_ii
+        ##S_VOC_oo[nk,ns,:,:] = S_VOC[nk,ns,0:CAB_o.shape[2],:]
+        S_VOC[nk,ns,:,:] = SAB[nk-1] # for now, but check which overlap matrix has to be used!
+
 #---------Transform the overlap matrix SAB into the fragment orbital basis-----
 #       SAB_o/o_FO = CAB_o(k,spin) * SAB(k,spin) * (CAB_o(k,spin))^T
 #       SAB_v/v_FO = CAB_v(k,spin) * SAB(k,spin) * (CAB_v(k,spin))^T
 #       SAB_o/v_FO = CAB_o(k,spin) * SAB(k,spin) * (CAB_v(k,spin))^T
 #       SAB_v/o_FO = CAB_v(k,spin) * SAB(k,spin) * (CAB_o(k,spin))^T
 
-#TRY --- Also build the overlap matrix consisting of the overlap matrices of the fragments SAB = [[SAB_A,0],[0,SAB_B]]
-#S_AB=0*SAB
-#S_AB[:,0:SA.shape[1],0:SA.shape[2]]=SA
-#S_AB[:,SA.shape[1]:,SA.shape[2]:]=SB
-#SAB=S_AB
-SAB_oo = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,n_occ_A+n_occ_B),dtype='complex128')
+SAB_oo = np.zeros(shape=(n_k,nspin,CAB_o.shape[2],CAB_o.shape[2]),dtype='complex128')
 SAB_vv = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],CAB_v.shape[2]),dtype='complex128')
-SAB_ov = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,CAB_v.shape[2]),dtype='complex128')
-SAB_vo = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],n_occ_A+n_occ_B),dtype='complex128')
-SAB_all = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B+CAB_v.shape[2],n_occ_A+n_occ_B+CAB_v.shape[2]),dtype='complex128')
+SAB_ov = np.zeros(shape=(n_k,nspin,CAB_o.shape[2],CAB_v.shape[2]),dtype='complex128')
+SAB_vo = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],CAB_o.shape[2]),dtype='complex128')
+SAB_all = np.zeros(shape=(n_k,nspin,CAB_ov.shape[2],CAB_ov.shape[2]),dtype='complex128')
 for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
     for ns in range(nspin):
+#        if k_valid:
         ######### SAB ########
         CAB_T = np.matrix.conjugate(np.transpose(CAB_ov[nk,ns,:,:]))
-        P = np.matmul(CAB_ov[nk,ns,:,:],SAB[nk,:,:])
+        #CAB_T = np.transpose(np.matrix.conjugate(CAB_ov[nk,ns,:,:]))
+        P = np.matmul(CAB_ov[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_all[nk,ns,:,:] = SAB_FO
         ####### SAB_oo #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_o[nk,ns,:,:]))
-        P = np.matmul(CAB_o[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_o[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_oo[nk,ns,:,:] = SAB_FO
         ####### SAB_vv #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_v[nk,ns,:,:]))
-        P = np.matmul(CAB_v[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_v[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vv[nk,ns,:,:] = SAB_FO
         ####### SAB_ov #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_v[nk,ns,:,:]))
-        P = np.matmul(CAB_o[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_o[nk,ns,:,:],S_VOC[nk,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_ov[nk,ns,:,:] = SAB_FO
         ####### SAB_vo #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_o[nk,ns,:,:]))
-        P = np.matmul(CAB_v[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_v[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vo[nk,ns,:,:] = SAB_FO
 #-------End of the construction of the overlap matrices in FO basis------------
 
 #-------Orthogonalize occ fragment orbitals relative to each other-------------
+print("STEP 1:   Loewdin Orthogonalization of occupied states")
 #       CAB_oo_FO1 = (SAB_oo)^(-1/2) * CAB_o
 CAB_oo_FO1 = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,psiA.shape[3]+psiB.shape[3]),dtype='complex128')
 SAB_oo_ii_vec = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,n_occ_A+n_occ_B),dtype='complex128')
-
+#SAB_oo_ii_vec = np.zeros(shape=(n_k,nspin,SAB.shape[1],SAB.shape[2]),dtype='complex128')
 for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
     for ns in range(nspin):
+#        if k_valid:
         ## Getting the ^(-1/2) of the overlap matrix
-        lam_s, l_s = np.linalg.eigh(SAB_oo[nk,ns,:,:])
+        lam_s, l_s = np.linalg.eigh(SAB_oo[nk,ns,:,:])#SAB_oo[nk,ns,:,:]
         lam_s = lam_s * np.eye(len(lam_s))
         lam_sqrt_inv = np.sqrt(np.linalg.inv(lam_s))
         symm_orthog = np.dot(l_s, np.dot(lam_sqrt_inv, l_s.T))
@@ -292,58 +377,82 @@ for nk in range(n_k):
         #SAB_oo_ii = np.linalg.inv(lalg.sqrtm(SAB_oo[nk,ns,:,:]))
         SAB_oo_ii_vec[nk,ns,:,:] = SAB_oo_ii
         ####################
-        C_o_nn = np.matmul(SAB_oo_ii,CAB_o[nk,ns,:,:])#np.matmul(CAB_o[nk,ns,:,:],SAB_oo_ii)
+        C_o_nn = np.matmul(SAB_oo_ii,CAB_o[nk,ns,:,:])#np.matmul(SAB_oo_ii,CAB_o[nk,ns,:,:])#
         CAB_oo_FO1[nk,ns,:,:] = C_o_nn
-print("STEP 1:   Loewdin Orthogonalization of occupied states")
 #-------End of orthogonalization of occ fragment orbitals----------------------
+
+#--------Test whether the orthogonalization can be done in one step------------        
+#print("STEP TT:   Test complete Orthogonalization")
+#CAB_FO1 = np.zeros(shape=(n_k,nspin,psiA.shape[2]+psiB.shape[2],psiA.shape[3]+psiB.shape[3]),dtype='complex128')
+#SAB_oo_ii_vec_tt = np.zeros(shape=(n_k,nspin,psiA.shape[2]+psiB.shape[2],psiA.shape[2]+psiB.shape[2]),dtype='complex128')
+#for nk in range(n_k):
+#    for ns in range(nspin):
+#        ## Getting the ^(-1/2) of the overlap matrix
+#        lam_s, l_s = np.linalg.eigh(SAB_all[nk,ns,:,:])
+#        lam_s = lam_s * np.eye(len(lam_s))
+#        lam_sqrt_inv = np.sqrt(np.linalg.inv(lam_s))
+#        symm_orthog = np.dot(l_s, np.dot(lam_sqrt_inv, l_s.T))
+#        SAB_oo_ii = symm_orthog
+#        SAB_oo_ii_vec_tt[nk,ns,:,:] = SAB_oo_ii
+#        ####################
+#        C_o_nn = np.matmul(SAB_oo_ii,CAB_ov[nk,ns,:,:])
+#        CAB_FO1[nk,ns,:,:] = C_o_nn
+#--------End of test of orthogonalization--------------------------------------
 
 
 #------- Construct the new overlap matrix SAB_oo_FO1 --------------------------
-#       SAB_o/o_FO1 = CAB_o_FO1(k,spin) * SAB(k,spin) * (CAB_o_FO1(k,spin))^T
-#       SAB_v/v_FO1 = CAB_v_FO1(k,spin) * SAB(k,spin) * (CAB_v_FO1(k,spin))^T
+#       SAB_o/o_FO1 = CAB_oo_FO1(k,spin) * SAB(k,spin) * (CAB_oo_FO1(k,spin))^T
+#       SAB_v/v_FO1 = CAB_vv_FO1(k,spin) * SAB(k,spin) * (CAB_vv_FO1(k,spin))^T
 #       SAB_o/v_FO1 = CAB_o_FO1(k,spin) * SAB(k,spin) * (CAB_v_FO1(k,spin))^T
 #       SAB_v/o_FO1 = CAB_v_FO1(k,spin) * SAB(k,spin) * (CAB_o_FO1(k,spin))^T            
-SAB_oo_FO1 = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,n_occ_A+n_occ_B),dtype='complex128')
+SAB_oo_FO1 = np.zeros(shape=(n_k,nspin,CAB_o.shape[2],CAB_o.shape[2]),dtype='complex128')
 SAB_vv_FO1 = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],CAB_v.shape[2]),dtype='complex128')
-SAB_ov_FO1 = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,CAB_v.shape[2]),dtype='complex128')
+SAB_ov_FO1 = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,CAB_v.shape[2]),dtype='complex128')#n_occ_A+n_occ_B,CAB_v.shape[2]
 SAB_vo_FO1 = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],n_occ_A+n_occ_B),dtype='complex128')
 SAB_all_FO1 = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B+CAB_v.shape[2],n_occ_A+n_occ_B+CAB_v.shape[2]),dtype='complex128')
 for nk in range(n_k):
     for ns in range(nspin):
         ######### SAB ########
-#        CAB_T = np.matrix.conjugate(np.transpose(CAB_ov[nk,ns,:,:]))
-#        P = np.matmul(CAB_ov[nk,ns,:,:],SAB[nk,:,:])
-#        SAB_FO = np.matmul(P,CAB_T)
-#        SAB_all_FO1[nk,ns,:,:] = SAB_FO
+        CAB_T = np.matrix.conjugate(np.transpose(CAB_ov[nk,ns,:,:]))
+        P = np.matmul(CAB_ov[nk,ns,:,:],S_VOC[nk,ns,:,:])
+        SAB_FO = np.matmul(P,CAB_T)
+        SAB_all_FO1[nk,ns,:,:] = SAB_FO
         ####### SAB_oo #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_oo_FO1[nk,ns,:,:]))
-        P = np.matmul(CAB_oo_FO1[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_oo_FO1[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_oo_FO1[nk,ns,:,:] = SAB_FO
         ####### SAB_vv #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_v[nk,ns,:,:]))
-        P = np.matmul(CAB_v[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_v[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vv_FO1[nk,ns,:,:] = SAB_FO
         ####### SAB_ov #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_v[nk,ns,:,:]))
-        P = np.matmul(CAB_oo_FO1[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_oo_FO1[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_ov_FO1[nk,ns,:,:] = SAB_FO
         ####### SAB_vo #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_oo_FO1[nk,ns,:,:]))
-        P = np.matmul(CAB_v[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_v[nk,ns,:,:],S_VOC[nk,ns,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vo_FO1[nk,ns,:,:] = SAB_FO
         
 #-------Check if the orhtogonalization from above worked-----------------------
 for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
     for ns in range(nspin):
+#        if k_valid:
         CAB_T = np.matrix.conjugate(np.transpose(SAB_oo_ii_vec[nk,ns,:,:]))
-        CC = np.matmul(CAB_T,SAB_oo[nk,ns,:,:])
-        MM = np.matmul(CC,SAB_oo_ii_vec[nk,ns,:,:])
+        CC = np.matmul(SAB_oo_ii_vec[nk,ns,:,:],SAB_oo[nk,ns,:,:])#SAB_oo[nk,ns,:,:]
+        MM = np.matmul(CC,CAB_T)
+        #also check if CAB_oT * CAB_o=1
+        CAB_test=(np.matmul(np.transpose(CAB_oo_FO1[nk,ns,:,:]),CAB_oo_FO1[nk,ns,:,:]))
         I=np.eye(MM.shape[0])
-        if np.all(np.abs((np.abs(MM)-I))<1e-10) and np.all(np.abs(np.abs(SAB_oo_FO1[nk,ns,:,:])-I)<1e-8):
+        if np.all(np.abs((np.abs(MM)-I))<1e-10) and np.all(np.abs(np.abs(SAB_oo_FO1[nk,ns,:,:])-np.eye(CAB_oo_FO1[nk,ns,:,:].shape[0]))<1e-8):
             print("STEP 1:   Loewdin Orthogonalization worked")
         else:
             print("STEP 1:   ERROR: Loewdin Orthogonalization did not work")
@@ -360,25 +469,31 @@ for nk in range(n_k):
         C_GS[nk,ns,:,:] = SAB_vo_FO1[nk,ns,:,:]#-1.*np.matmul(C_nn,SAB_ov_FO1[nk,ns,:,:])
         C_corr[nk,ns,:,:] = np.matmul(C_GS[nk,ns,:,:],CAB_oo_FO1[nk,ns,:,:])
         C_v_FO2[nk,ns,:,:] = CAB_v[nk,ns,:,:] - C_corr[nk,ns,:,:]
+CAB_vv_FO2 = CAB_v
 #-------Check if the orhtogonalization from above worked-----------------------
 SAB_ov_FO2 = np.zeros(shape=(n_k,nspin,n_occ_A+n_occ_B,CAB_v.shape[2]),dtype='complex128')
 SAB_vo_FO2 = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],n_occ_A+n_occ_B),dtype='complex128')
 SAB_vv_FO2 = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],CAB_v.shape[2]),dtype='complex128')
 for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
     for ns in range(nspin):
+#        if k_valid:
         ####### SAB_ov #######
         CAB_T = np.matrix.conjugate(np.transpose(C_v_FO2[nk,ns,:,:]))
-        P = np.matmul(CAB_oo_FO1[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_oo_FO1[nk,ns,:,:],SAB[nk-1,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_ov_FO2[nk,ns,:,:] = SAB_FO
         ####### SAB_vo #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_oo_FO1[nk,ns,:,:]))
-        P = np.matmul(C_v_FO2[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(C_v_FO2[nk,ns,:,:],SAB[nk-1,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vo_FO2[nk,ns,:,:] = SAB_FO
         ####### SAB_vv #######
         CAB_T = np.matrix.conjugate(np.transpose(C_v_FO2[nk,ns,:,:]))
-        P = np.matmul(C_v_FO2[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(C_v_FO2[nk,ns,:,:],SAB[nk-1,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vv_FO2[nk,ns,:,:] = SAB_FO
         if np.all(np.abs(SAB_vo_FO2[nk,ns,:,:].real)<1e-10) and np.all(np.abs(SAB_ov_FO2[nk,ns,:,:].real)<1e-10):
@@ -394,7 +509,12 @@ SAB_vv_FO3 = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],CAB_v.shape[2]),dtype='com
 SAB_vv_FO3T = np.zeros(shape=(n_k,nspin,CAB_v.shape[2],CAB_v.shape[2]),dtype='complex128')
 
 for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
     for ns in range(nspin):
+#        if k_valid:
 #        SAB_oo_ii = lalg.sqrtm(SAB_oo[nk,ns,:,:])
         # Getting the ^(-1/2) of the overlap matrix
         lam_s, l_s = np.linalg.eigh(SAB_vv_FO2[nk,ns,:,:])
@@ -406,19 +526,24 @@ for nk in range(n_k):
         ####################
         C_o_nn = np.matmul(SAB_oo_ii,C_v_FO2[nk,ns,:,:])
         CAB_vv_FO3[nk,ns,:,:] = C_o_nn
-print("STEP 3:   Loewdin Orthogonalization of occupied states")
+print("STEP 3:   Loewdin Orthogonalization of virtual states")
 #-------End of orthogonalization of occ fragment orbitals----------------------
 
 #-------Check if the orhtogonalization from above worked-----------------------
 for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
     for ns in range(nspin):
+#        if k_valid:
         CAB_T = np.matrix.conjugate(np.transpose(SAB_vv_FO3T[nk,ns,:,:]))
         CC = np.matmul(CAB_T,SAB_vv_FO2[nk,ns,:,:])
         MM = np.matmul(CC,SAB_vv_FO3T[nk,ns,:,:])
         I=np.eye(MM.shape[0])
         ####### SAB_vv #######
         CAB_T = np.matrix.conjugate(np.transpose(CAB_vv_FO3[nk,ns,:,:]))
-        P = np.matmul(CAB_vv_FO3[nk,ns,:,:],SAB[nk,:,:])
+        P = np.matmul(CAB_vv_FO3[nk,ns,:,:],SAB[nk-1,:,:])
         SAB_FO = np.matmul(P,CAB_T)
         SAB_vv_FO3[nk,ns,:,:] = SAB_FO
         if np.all(np.abs(MM.real-I)<1e-10) and np.all(np.abs(SAB_FO.real-I)<1e-9):
@@ -438,8 +563,25 @@ for nk in range(n_k):
         SAB_final[nk,ns,n_occ_A+n_occ_B:,0:n_occ_A+n_occ_B] = SAB_vo_FO2[nk,ns,:,:]
         SAB_final[nk,ns,n_occ_A+n_occ_B:,n_occ_A+n_occ_B:] = SAB_vv_FO3[nk,ns,:,:]
         CAB_final[nk,ns,0:n_occ_A+n_occ_B,0:] = CAB_oo_FO1[nk,ns,:,:]#*0
-        CAB_final[nk,ns,n_occ_A+n_occ_B:,0:] = CAB_vv_FO3[nk,ns,:,:]#*0.001
+        CAB_final[nk,ns,n_occ_A+n_occ_B:,0:] = 1.*CAB_vv_FO3[nk,ns,:,:]#*0.001 a factor does not change anything!!!! 
+        #CAB_final[nk,ns,:,:] = CAB_FO1[nk,ns,:,:]
         
+#-----------Check if the overall orthogonalization worked----------------------
+for nk in range(n_k):
+#    if nk in range(nkpts+1)[1:]:
+#        k_valid = 1
+#    else:
+#        k_valid = 0
+    for ns in range(nspin):
+#        if k_valid:
+        CAB_T = np.matrix.conjugate(np.transpose(CAB_final[nk,ns,:,:]))
+        CC = np.matmul(CAB_final[nk,ns,:,:],SAB[nk-1,:,:])
+        MM = np.matmul(CC,CAB_T)
+        I=np.eye(MM.shape[0])
+        if np.all(np.abs(MM.real-I)<1e-10):
+            print("STEP 1-3:   Orthogonalization worked ")
+        else:
+            print("STEP 1-3:   Orthogonalization did not work ")
 ##Normalize occupied and virtual states################# EXPERIMENTAL !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #for nk in range(n_k):
 #    for ns in range(nspin):
@@ -449,16 +591,15 @@ for nk in range(n_k):
             
 #-----------------End of the Construction of the coefficient matrix------------------
                 
-N_k_control=75
-reproduce = 0
+#N_k_control=16
+#reproduce = 0
 path = PP+'AB_restart/'
-write_restart_files_from_input(path,N_k_control,eigenvaluesAB,CAB_final,occ_AB_FO,orb_posAB,kpoint_weights,reproduce)
-
-path = PP+'AB_wo_transform/'
-write_restart_files_from_input(path,N_k_control,eigenvaluesAB,CAB_wo_transform,occ_AB_FO,orb_posAB,kpoint_weights,reproduce)
-
-path = PP+'AB_test/'
-#write_restart_files_from_input(path,N_k_control,eigenvaluesAB,psiAB,occ_AB,orb_posAB,kpoint_weights,reproduce)              
+#REPRODUCE_RESTART_FILES(path,CAB_final,eigenvaluesAB*Ha_to_eV,occ_AB,N_k_control,params,reproduce=1)
+##write_restart_files_from_input(path,N_k_control,eigenvaluesAB,CAB_final,occ_AB_FO,orb_posAB,kpoint_weights,reproduce)
+##write_restart_files2(path,N_k_control,eigenvaluesAB,CAB_final,occ_AB,np.zeros(nkpts))
+##path = PP+'AB_wo_transform/'
+##write_restart_files_from_input(path,N_k_control,eigenvaluesAB,CAB_wo_transform,occAB,orb_posAB,kpoint_weights,reproduce)
+            
     
 #--------------------------------------------------------------------------------------------------------
 
